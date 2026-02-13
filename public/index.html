@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kano State Voter Database Management System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .signature-pad {
+            border: 2px dashed #16a34a;
+            border-radius: 8px;
+            background: #f0fdf4;
+            cursor: crosshair;
+        }
+        
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .nav-item:hover {
+            background: rgba(22, 163, 74, 0.1);
+        }
+        
+        .stat-card {
+            transition: all 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Color Distribution: Green 50%, White 50%, Black 25%, Red 15% */
+        .bg-primary-green { background-color: #16a34a; }
+        .text-primary-green { color: #16a34a; }
+        .border-primary-green { border-color: #16a34a; }
+        .bg-primary-black { background-color: #1f2937; }
+        .text-primary-black { color: #1f2937; }
+        .bg-accent-red { background-color: #dc2626; }
+        .text-accent-red { color: #dc2626; }
+    </style>
+</head>
+<body class="bg-white">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef, useEffect } = React;
+
+        // Logo Component - Placeholder that can be replaced with actual logo
+        const KanoLogo = ({ size = 50 }) => (
+            <div className="flex items-center justify-center" style={{width: size, height: size}}>
+                {/* Replace this div with: <img src="./assets/onekanologo.jpeg" alt="Kano Logo" style={{width: size, height: size, objectFit: 'contain'}} /> */}
+                <div className="w-full h-full bg-primary-green rounded-lg flex items-center justify-center text-white font-bold text-xl">
+                    KANO
+                </div>
+            </div>
+        );
+
+        // Main App Component
+        function App() {
+            const [currentView, setCurrentView] = useState('login');
+            const [userRole, setUserRole] = useState(null);
+            const [sidebarOpen, setSidebarOpen] = useState(true);
+            const [searchQuery, setSearchQuery] = useState('');
+            const [showModal, setShowModal] = useState(false);
+            const [modalType, setModalType] = useState('');
+            const canvasRef = useRef(null);
+            const [isDrawing, setIsDrawing] = useState(false);
+            const [showNotification, setShowNotification] = useState(false);
+            const [notificationMessage, setNotificationMessage] = useState('');
+
+            // Mockup data
+            const [users, setUsers] = useState([
+                { id: 1, username: 'admin', role: 'Admin', created_at: '2026-01-15' },
+                { id: 2, username: 'user1', role: 'User', created_at: '2026-01-20' },
+            ]);
+
+            const [voters, setVoters] = useState([
+                { id: 1, full_name: 'Abubakar Ibrahim', organization: 'Farmers Association', local_government: 'Kano Municipal', ward: 'Kofar Mata', polling_unit: 'PU-001', phone_number: '08012345678', vin: '90F5B6C3D4E8A1B7' },
+                { id: 2, full_name: 'Fatima Mohammed', organization: null, local_government: 'Gwale', ward: 'Gwale Central', polling_unit: 'PU-002', phone_number: '08098765432', vin: '1A2B3C4D5E6F7G8H' },
+                { id: 3, full_name: 'Musa Sani', organization: 'Teachers Union', local_government: 'Nassarawa', ward: 'Brigade', polling_unit: 'PU-003', phone_number: '08011112222', vin: '9Z8Y7X6W5V4U3T2S' },
+            ]);
+
+            const lgas = ['Ajingi', 'Albasu', 'Bagwai', 'Bebeji', 'Bichi', 'Bunkure', 'Dala', 'Dawakin Kudu', 'Dawakin Tofa', 'Doguwa', 'Fagge', 'Garko', 'Garun Malam', 'Gezawa', 'Gwarzo', 'Gwale', 'Kabo', 'Kano Municipal', 'Karaye', 'Kibiya', 'Kiru', 'Kumbotso', 'Kunchi', 'Kura', 'Madobi', 'Makoda', 'Minjibir', 'Nassarawa', 'Rano', 'Rimin Gado', 'Rogo', 'Shanono', 'Sumaila', 'Takai', 'Tarauni', 'Tudun Wada', 'Ungogo', 'Warawa', 'Wudil'];
+
+            // Show notification
+            const showNotif = (message) => {
+                setNotificationMessage(message);
+                setShowNotification(true);
+                setTimeout(() => setShowNotification(false), 3000);
+            };
+
+            // Verify VIN with INEC
+            const verifyWithINEC = (vin) => {
+                // Copy VIN to clipboard
+                navigator.clipboard.writeText(vin).then(() => {
+                    showNotif(`VIN ${vin} copied to clipboard`);
+                    // Open INEC verification portal in new tab
+                    window.open('https://cvr.inecnigeria.org/', '_blank');
+                }).catch(err => {
+                    console.error('Failed to copy VIN:', err);
+                    showNotif('Failed to copy VIN to clipboard');
+                });
+            };
+
+            // Signature Pad Functions
+            const startDrawing = (e) => {
+                setIsDrawing(true);
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                const rect = canvas.getBoundingClientRect();
+                const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+                const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+            };
+
+            const draw = (e) => {
+                if (!isDrawing) return;
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                const rect = canvas.getBoundingClientRect();
+                const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+                const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+                ctx.lineTo(x, y);
+                ctx.strokeStyle = '#16a34a';
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            };
+
+            const stopDrawing = () => {
+                setIsDrawing(false);
+            };
+
+            const clearSignature = () => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            };
+
+            // Notification Component
+            const Notification = () => {
+                if (!showNotification) return null;
+                return (
+                    <div className="fixed top-4 right-4 z-50 animate-fade-in">
+                        <div className="bg-primary-green text-white px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <p className="font-semibold">{notificationMessage}</p>
+                        </div>
+                    </div>
+                );
+            };
+
+            // Login Component - Green 50%, White 50%
+            const LoginView = () => (
+                <div className="min-h-screen flex">
+                    {/* Left side - Green 50% */}
+                    <div className="hidden lg:flex lg:w-1/2 bg-primary-green items-center justify-center p-12">
+                        <div className="text-center text-white">
+                            <KanoLogo size={120} />
+                            <h1 className="text-5xl font-bold mt-8 mb-4">Kano State VDMS</h1>
+                            <p className="text-2xl mb-8">Voter Database Management System</p>
+                            <div className="space-y-4 text-lg">
+                                <div className="flex items-center gap-3 justify-center">
+                                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.018-4.118A9.953 9.953 0 0112 3c-5.523 0-10 4.477-10 10s4.477 10 10 10 10-4.477 10-10c0-1.821-.487-3.53-1.338-5M12 8v4l3 3" />
+                                    </svg>
+                                    <span>Efficient Voter Management</span>
+                                </div>
+                                <div className="flex items-center gap-3 justify-center">
+                                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                    </svg>
+                                    <span>Secure & Reliable</span>
+                                </div>
+                                <div className="flex items-center gap-3 justify-center">
+                                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <span>Comprehensive Records</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Right side - White 50% */}
+                    <div className="w-full lg:w-1/2 flex items-center justify-center p-6 bg-white">
+                        <div className="w-full max-w-md">
+                            <div className="lg:hidden flex justify-center mb-6">
+                                <KanoLogo size={80} />
+                            </div>
+                            
+                            <div className="text-center mb-8">
+                                <h2 className="text-3xl font-bold text-primary-black mb-2">Welcome Back</h2>
+                                <p className="text-gray-600">Sign in to access the voter database</p>
+                            </div>
+                            
+                            <form onSubmit={(e) => {
+                                e.preventDefault();
+                                setUserRole('Admin');
+                                setCurrentView('dashboard');
+                                showNotif('Login successful!');
+                            }} className="space-y-6">
+                                <div>
+                                    <label className="block text-primary-black font-semibold mb-2">Username</label>
+                                    <input 
+                                        type="text" 
+                                        defaultValue="admin"
+                                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none transition"
+                                        placeholder="Enter username"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-primary-black font-semibold mb-2">Password</label>
+                                    <input 
+                                        type="password" 
+                                        defaultValue="password"
+                                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none transition"
+                                        placeholder="Enter password"
+                                    />
+                                </div>
+                                <button 
+                                    type="submit"
+                                    className="w-full bg-primary-green text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition shadow-lg text-lg"
+                                >
+                                    Login
+                                </button>
+                            </form>
+                            
+                            <div className="mt-6 text-center text-sm text-gray-600">
+                                <p>Demo Credentials: <span className="font-semibold">admin / password</span></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            // Dashboard Component
+            const DashboardView = () => (
+                <div className="animate-fade-in">
+                    <h2 className="text-3xl font-bold text-primary-black mb-8">Dashboard Overview</h2>
+                    
+                    {/* Stats Cards - Green accents */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                        <div className="stat-card bg-white rounded-xl shadow-lg p-6 border-l-4 border-primary-green">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-gray-600 text-sm font-semibold">Total Voters</p>
+                                    <p className="text-3xl font-bold text-primary-black mt-2">12,847</p>
+                                </div>
+                                <div className="bg-green-100 p-4 rounded-full">
+                                    <svg className="w-8 h-8 text-primary-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                    </svg>
+                                </div>
+                            </div>
+                            <p className="text-primary-green text-sm mt-4">↑ 234 new this week</p>
+                        </div>
+
+                        <div className="stat-card bg-white rounded-xl shadow-lg p-6 border-l-4 border-primary-black">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-gray-600 text-sm font-semibold">LGAs Covered</p>
+                                    <p className="text-3xl font-bold text-primary-black mt-2">44</p>
+                                </div>
+                                <div className="bg-gray-100 p-4 rounded-full">
+                                    <svg className="w-8 h-8 text-primary-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                                    </svg>
+                                </div>
+                            </div>
+                            <p className="text-gray-600 text-sm mt-4">Complete coverage</p>
+                        </div>
+
+                        <div className="stat-card bg-white rounded-xl shadow-lg p-6 border-l-4 border-accent-red">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-gray-600 text-sm font-semibold">Today's Registration</p>
+                                    <p className="text-3xl font-bold text-primary-black mt-2">47</p>
+                                </div>
+                                <div className="bg-red-100 p-4 rounded-full">
+                                    <svg className="w-8 h-8 text-accent-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                                    </svg>
+                                </div>
+                            </div>
+                            <p className="text-accent-red text-sm mt-4">Active registrations</p>
+                        </div>
+
+                        <div className="stat-card bg-white rounded-xl shadow-lg p-6 border-l-4 border-primary-green">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-gray-600 text-sm font-semibold">Active Users</p>
+                                    <p className="text-3xl font-bold text-primary-black mt-2">24</p>
+                                </div>
+                                <div className="bg-green-100 p-4 rounded-full">
+                                    <svg className="w-8 h-8 text-primary-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                    </svg>
+                                </div>
+                            </div>
+                            <p className="text-gray-600 text-sm mt-4">System operators</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                        <div className="bg-white rounded-xl shadow-lg p-6">
+                            <h3 className="text-xl font-bold text-primary-black mb-4">Registration by LGA</h3>
+                            <div className="space-y-3">
+                                {['Kano Municipal', 'Gwale', 'Nassarawa', 'Fagge', 'Tarauni'].map((lga, idx) => (
+                                    <div key={idx}>
+                                        <div className="flex justify-between mb-1">
+                                            <span className="text-sm font-semibold text-primary-black">{lga}</span>
+                                            <span className="text-sm text-gray-600">{Math.floor(Math.random() * 2000 + 1000)}</span>
+                                        </div>
+                                        <div className="w-full bg-gray-200 rounded-full h-2">
+                                            <div className="bg-primary-green h-2 rounded-full" style={{width: `${Math.random() * 50 + 50}%`}}></div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-lg p-6">
+                            <h3 className="text-xl font-bold text-primary-black mb-4">Recent Activity</h3>
+                            <div className="space-y-4">
+                                <div className="flex items-start gap-3 pb-3 border-b border-gray-200">
+                                    <div className="bg-green-100 p-2 rounded-full">
+                                        <svg className="w-5 h-5 text-primary-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                                        </svg>
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-sm font-semibold text-primary-black">New voter registered</p>
+                                        <p className="text-xs text-gray-600">Aisha Bello - Gwale Ward</p>
+                                        <p className="text-xs text-gray-500">2 minutes ago</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-3 pb-3 border-b border-gray-200">
+                                    <div className="bg-green-100 p-2 rounded-full">
+                                        <svg className="w-5 h-5 text-primary-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-sm font-semibold text-primary-black">Voter details updated</p>
+                                        <p className="text-xs text-gray-600">Mohammed Sani - Phone updated</p>
+                                        <p className="text-xs text-gray-500">15 minutes ago</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-3">
+                                    <div className="bg-red-100 p-2 rounded-full">
+                                        <svg className="w-5 h-5 text-accent-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                        </svg>
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-sm font-semibold text-primary-black">New user created</p>
+                                        <p className="text-xs text-gray-600">User: dataentry3 - Role: User</p>
+                                        <p className="text-xs text-gray-500">1 hour ago</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            // Voters List Component
+            const VotersListView = () => (
+                <div className="animate-fade-in">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                        <h2 className="text-3xl font-bold text-primary-black">Voter Management</h2>
+                        <button 
+                            onClick={() => { setModalType('voter'); setShowModal(true); }}
+                            className="bg-primary-green text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition shadow-lg flex items-center gap-2"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                            Register New Voter
+                        </button>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+                        <div className="flex flex-col md:flex-row gap-4">
+                            <div className="flex-1">
+                                <input 
+                                    type="text" 
+                                    placeholder="Search by name or VIN..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none"
+                                />
+                            </div>
+                            <select className="px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none">
+                                <option>All LGAs</option>
+                                {lgas.map(lga => <option key={lga}>{lga}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead className="bg-primary-green text-white">
+                                    <tr>
+                                        <th className="px-6 py-4 text-left text-sm font-semibold">Full Name</th>
+                                        <th className="px-6 py-4 text-left text-sm font-semibold">VIN</th>
+                                        <th className="px-6 py-4 text-left text-sm font-semibold">LGA</th>
+                                        <th className="px-6 py-4 text-left text-sm font-semibold">Ward</th>
+                                        <th className="px-6 py-4 text-left text-sm font-semibold">Phone</th>
+                                        <th className="px-6 py-4 text-left text-sm font-semibold">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {voters.map((voter, idx) => (
+                                        <tr key={voter.id} className="hover:bg-gray-50 transition">
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                                                        <span className="text-primary-green font-semibold">{voter.full_name.charAt(0)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-semibold text-primary-black">{voter.full_name}</p>
+                                                        {voter.organization && <p className="text-xs text-gray-600">{voter.organization}</p>}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-primary-black font-mono">{voter.vin}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-700">{voter.local_government}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-700">{voter.ward}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-700">{voter.phone_number}</td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex gap-2">
+                                                    <button 
+                                                        className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition" 
+                                                        title="View"
+                                                    >
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                        </svg>
+                                                    </button>
+                                                    <button 
+                                                        className="p-2 bg-green-100 text-primary-green rounded-lg hover:bg-green-200 transition" 
+                                                        title="Edit"
+                                                    >
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                        </svg>
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => verifyWithINEC(voter.vin)}
+                                                        className="px-3 py-2 bg-primary-green text-white rounded-lg hover:bg-green-700 transition text-xs font-semibold flex items-center gap-1" 
+                                                        title="Verify with INEC"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                        </svg>
+                                                        Verify
+                                                    </button>
+                                                    {userRole === 'Admin' && (
+                                                        <button 
+                                                            className="p-2 bg-red-100 text-accent-red rounded-lg hover:bg-red-200 transition" 
+                                                            title="Delete"
+                                                        >
+                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                            </svg>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                            <p className="text-sm text-gray-700">Showing <span className="font-semibold">1-3</span> of <span className="font-semibold">12,847</span> voters</p>
+                            <div className="flex gap-2">
+                                <button className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition">Previous</button>
+                                <button className="px-4 py-2 bg-primary-green text-white rounded-lg hover:bg-green-700 transition">Next</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            // User Management Component
+            const UsersView = () => (
+                <div className="animate-fade-in">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                        <h2 className="text-3xl font-bold text-primary-black">User Management</h2>
+                        <button 
+                            onClick={() => { setModalType('user'); setShowModal(true); }}
+                            className="bg-primary-green text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition shadow-lg flex items-center gap-2"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                            Create New User
+                        </button>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead className="bg-primary-green text-white">
+                                    <tr>
+                                        <th className="px-6 py-4 text-left text-sm font-semibold">Username</th>
+                                        <th className="px-6 py-4 text-left text-sm font-semibold">Role</th>
+                                        <th className="px-6 py-4 text-left text-sm font-semibold">Created Date</th>
+                                        <th className="px-6 py-4 text-left text-sm font-semibold">Status</th>
+                                        <th className="px-6 py-4 text-left text-sm font-semibold">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {users.map((user) => (
+                                        <tr key={user.id} className="hover:bg-gray-50 transition">
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                                                        <svg className="w-6 h-6 text-primary-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                        </svg>
+                                                    </div>
+                                                    <p className="font-semibold text-primary-black">{user.username}</p>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${user.role === 'Admin' ? 'bg-red-100 text-accent-red' : 'bg-green-100 text-primary-green'}`}>
+                                                    {user.role}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-gray-700">{user.created_at}</td>
+                                            <td className="px-6 py-4">
+                                                <span className="px-3 py-1 bg-green-100 text-primary-green rounded-full text-xs font-semibold">Active</span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex gap-2">
+                                                    <button className="p-2 bg-green-100 text-primary-green rounded-lg hover:bg-green-200 transition" title="Edit">
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                        </svg>
+                                                    </button>
+                                                    <button className="p-2 bg-red-100 text-accent-red rounded-lg hover:bg-red-200 transition" title="Delete">
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            // Modal Component
+            const Modal = () => {
+                if (!showModal) return null;
+
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fade-in">
+                        <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                            <div className="sticky top-0 bg-primary-green text-white px-6 py-4 flex justify-between items-center">
+                                <h3 className="text-2xl font-bold">
+                                    {modalType === 'voter' ? 'Register New Voter' : 'Create New User'}
+                                </h3>
+                                <button 
+                                    onClick={() => setShowModal(false)}
+                                    className="text-white hover:text-gray-200 transition"
+                                >
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div className="p-6">
+                                {modalType === 'voter' ? (
+                                    <form className="space-y-6" onSubmit={(e) => {
+                                        e.preventDefault();
+                                        setShowModal(false);
+                                        showNotif('Voter registered successfully!');
+                                    }}>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div>
+                                                <label className="block text-primary-black font-semibold mb-2">Full Name *</label>
+                                                <input 
+                                                    type="text" 
+                                                    required
+                                                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none" 
+                                                    placeholder="Enter full name" 
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-primary-black font-semibold mb-2">Organization (Optional)</label>
+                                                <input 
+                                                    type="text" 
+                                                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none" 
+                                                    placeholder="Enter organization" 
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-primary-black font-semibold mb-2">Local Government *</label>
+                                                <select 
+                                                    required
+                                                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none"
+                                                >
+                                                    <option value="">Select LGA</option>
+                                                    {lgas.map(lga => <option key={lga} value={lga}>{lga}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-primary-black font-semibold mb-2">Ward *</label>
+                                                <select 
+                                                    required
+                                                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none"
+                                                >
+                                                    <option value="">Select Ward</option>
+                                                    <option>Ward 1</option>
+                                                    <option>Ward 2</option>
+                                                    <option>Ward 3</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-primary-black font-semibold mb-2">Polling Unit *</label>
+                                                <select 
+                                                    required
+                                                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none"
+                                                >
+                                                    <option value="">Select Polling Unit</option>
+                                                    <option>PU-001</option>
+                                                    <option>PU-002</option>
+                                                    <option>PU-003</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-primary-black font-semibold mb-2">Phone Number *</label>
+                                                <input 
+                                                    type="tel" 
+                                                    required
+                                                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none" 
+                                                    placeholder="080XXXXXXXX" 
+                                                />
+                                            </div>
+                                            <div className="md:col-span-2">
+                                                <label className="block text-primary-black font-semibold mb-2">VIN (Voter Identification Number) *</label>
+                                                <input 
+                                                    type="text" 
+                                                    required
+                                                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none" 
+                                                    placeholder="Enter VIN" 
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-primary-black font-semibold mb-2">Digital Signature *</label>
+                                            <div className="border-2 border-dashed border-primary-green rounded-lg p-4 bg-green-50">
+                                                <canvas
+                                                    ref={canvasRef}
+                                                    width={700}
+                                                    height={200}
+                                                    className="signature-pad w-full"
+                                                    onMouseDown={startDrawing}
+                                                    onMouseMove={draw}
+                                                    onMouseUp={stopDrawing}
+                                                    onMouseLeave={stopDrawing}
+                                                    onTouchStart={startDrawing}
+                                                    onTouchMove={draw}
+                                                    onTouchEnd={stopDrawing}
+                                                />
+                                            </div>
+                                            <div className="flex justify-between items-center mt-2">
+                                                <p className="text-sm text-gray-600">Sign above using mouse or touch</p>
+                                                <button 
+                                                    type="button"
+                                                    onClick={clearSignature}
+                                                    className="text-accent-red text-sm font-semibold hover:text-red-700 transition"
+                                                >
+                                                    Clear Signature
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex gap-4 pt-4 border-t border-gray-200">
+                                            <button 
+                                                type="button"
+                                                onClick={() => setShowModal(false)}
+                                                className="flex-1 px-6 py-3 border-2 border-gray-300 rounded-lg font-semibold hover:bg-gray-50 transition"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button 
+                                                type="submit"
+                                                className="flex-1 px-6 py-3 bg-primary-green text-white rounded-lg font-semibold hover:bg-green-700 transition shadow-lg"
+                                            >
+                                                Register Voter
+                                            </button>
+                                        </div>
+                                    </form>
+                                ) : (
+                                    <form className="space-y-6" onSubmit={(e) => {
+                                        e.preventDefault();
+                                        setShowModal(false);
+                                        showNotif('User created successfully!');
+                                    }}>
+                                        <div>
+                                            <label className="block text-primary-black font-semibold mb-2">Username *</label>
+                                            <input 
+                                                type="text" 
+                                                required
+                                                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none" 
+                                                placeholder="Enter username" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-primary-black font-semibold mb-2">Password *</label>
+                                            <input 
+                                                type="password" 
+                                                required
+                                                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none" 
+                                                placeholder="Enter password" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-primary-black font-semibold mb-2">Role *</label>
+                                            <select 
+                                                required
+                                                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary-green focus:outline-none"
+                                            >
+                                                <option value="">Select role</option>
+                                                <option value="Admin">Admin</option>
+                                                <option value="User">User</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="flex gap-4 pt-4 border-t border-gray-200">
+                                            <button 
+                                                type="button"
+                                                onClick={() => setShowModal(false)}
+                                                className="flex-1 px-6 py-3 border-2 border-gray-300 rounded-lg font-semibold hover:bg-gray-50 transition"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button 
+                                                type="submit"
+                                                className="flex-1 px-6 py-3 bg-primary-green text-white rounded-lg font-semibold hover:bg-green-700 transition shadow-lg"
+                                            >
+                                                Create User
+                                            </button>
+                                        </div>
+                                    </form>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // Sidebar Component
+            const Sidebar = () => (
+                <div className={`fixed lg:static inset-y-0 left-0 w-64 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out z-40 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+                    <div className="h-full flex flex-col">
+                        <div className="p-6 border-b border-gray-200 bg-primary-green">
+                            <div className="flex items-center gap-3">
+                                <KanoLogo size={50} />
+                                <div>
+                                    <h1 className="font-bold text-white text-lg">Kano VDMS</h1>
+                                    <p className="text-xs text-green-100">Voter Database</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <nav className="flex-1 p-4 space-y-2">
+                            <button 
+                                onClick={() => setCurrentView('dashboard')}
+                                className={`nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${currentView === 'dashboard' ? 'bg-green-100 text-primary-green font-semibold' : 'text-primary-black hover:bg-gray-100'}`}
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                                </svg>
+                                Dashboard
+                            </button>
+
+                            <button 
+                                onClick={() => setCurrentView('voters')}
+                                className={`nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${currentView === 'voters' ? 'bg-green-100 text-primary-green font-semibold' : 'text-primary-black hover:bg-gray-100'}`}
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                                Voters
+                            </button>
+
+                            {userRole === 'Admin' && (
+                                <button 
+                                    onClick={() => setCurrentView('users')}
+                                    className={`nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${currentView === 'users' ? 'bg-green-100 text-primary-green font-semibold' : 'text-primary-black hover:bg-gray-100'}`}
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                    </svg>
+                                    Users
+                                </button>
+                            )}
+
+                            <button className="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-primary-black hover:bg-gray-100 transition">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Reports
+                            </button>
+
+                            <button className="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-primary-black hover:bg-gray-100 transition">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                Settings
+                            </button>
+                        </nav>
+
+                        <div className="p-4 border-t border-gray-200">
+                            <div className="flex items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+                                <div className="w-10 h-10 bg-primary-green rounded-full flex items-center justify-center text-white font-bold">
+                                    A
+                                </div>
+                                <div className="flex-1">
+                                    <p className="font-semibold text-primary-black">Admin User</p>
+                                    <p className="text-xs text-gray-600">{userRole}</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => {
+                                    setCurrentView('login');
+                                    setUserRole(null);
+                                    showNotif('Logged out successfully');
+                                }}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-accent-red text-white rounded-lg font-semibold hover:bg-red-700 transition"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                </svg>
+                                Logout
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            // Main Layout
+            if (currentView === 'login') {
+                return <LoginView />;
+            }
+
+            return (
+                <div className="flex h-screen overflow-hidden">
+                    <Sidebar />
+                    
+                    {/* Overlay for mobile */}
+                    {sidebarOpen && (
+                        <div 
+                            className="fixed inset-0 bg-black bg-opacity-50 lg:hidden z-30"
+                            onClick={() => setSidebarOpen(false)}
+                        />
+                    )}
+
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        {/* Top Header - Black 25% color accent */}
+                        <header className="bg-white border-b border-gray-200 px-6 py-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <button 
+                                        onClick={() => setSidebarOpen(!sidebarOpen)}
+                                        className="lg:hidden text-primary-black hover:text-gray-700"
+                                    >
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                                        </svg>
+                                    </button>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-primary-black">
+                                            {currentView === 'dashboard' && 'Dashboard'}
+                                            {currentView === 'voters' && 'Voter Management'}
+                                            {currentView === 'users' && 'User Management'}
+                                        </h2>
+                                        <p className="text-sm text-gray-600">Welcome back, {userRole}</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-4">
+                                    <div className="relative hidden md:block">
+                                        <input 
+                                            type="text" 
+                                            placeholder="Search..."
+                                            className="w-64 px-4 py-2 border border-gray-300 rounded-lg focus:border-primary-green focus:outline-none"
+                                        />
+                                        <svg className="w-5 h-5 text-gray-400 absolute right-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                        </svg>
+                                    </div>
+                                    
+                                    <button className="relative p-2 text-primary-black hover:bg-gray-100 rounded-lg transition">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                                        </svg>
+                                        <span className="absolute top-1 right-1 w-2 h-2 bg-accent-red rounded-full"></span>
+                                    </button>
+                                </div>
+                            </div>
+                        </header>
+
+                        {/* Main Content */}
+                        <main className="flex-1 overflow-y-auto p-6 bg-gray-50">
+                            {currentView === 'dashboard' && <DashboardView />}
+                            {currentView === 'voters' && <VotersListView />}
+                            {currentView === 'users' && <UsersView />}
+                        </main>
+                    </div>
+
+                    <Modal />
+                    <Notification />
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
